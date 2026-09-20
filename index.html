@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Subway Surfers 3D - Sweet Spot Plus</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #0f172a;
+      font-family: Arial, sans-serif;
+      user-select: none;
+    }
+    #ui {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      color: #fff;
+      font-size: 20px;
+      font-weight: bold;
+      text-shadow: 2px 2px 4px #000;
+      z-index: 10;
+    }
+    #badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 8px;
+      background: #0284c7;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    #audio-hint {
+      font-size: 13px;
+      font-weight: normal;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    #game-over {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #fff;
+      z-index: 20;
+      background: rgba(15, 23, 42, 0.95);
+      padding: 30px 50px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      border: 2px solid #38bdf8;
+    }
+    #game-over button {
+      margin-top: 15px;
+      padding: 10px 24px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #0f172a;
+      background: #facc15;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <div id="ui">
+    <div>Score: <span id="score">0</span> <span id="badge">FAIR & ENGAGING</span></div>
+    <div>Coins: <span id="coins">0</span></div>
+    <div id="audio-hint">🔊 Tap or press any key for audio</div>
+  </div>
+
+  <div id="game-over">
+    <h1>CRASHED!</h1>
+    <p>Final Score: <span id="final-score">0</span></p>
+    <button onclick="restartGame()">Play Again</button>
+  </div>
+
+  <script>
+    // ==========================================
+    // --- SYNTHESIZED SOUND EFFECTS ---
+    // ==========================================
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        const hint = document.getElementById('audio-hint');
+        if (hint) hint.style.display = 'none';
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playJumpSound() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const now = audioCtx.currentTime;
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(180, now);
+      osc.frequency.exponentialRampToValueAtTime(460, now + 0.22);
+
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.26);
+    }
+
+    function playSlideSound() {
+      if (!audioCtx) return;
+      const bufferSize = audioCtx.sampleRate * 0.22;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(750, audioCtx.currentTime);
+      filter.frequency.linearRampToValueAtTime(160, audioCtx.currentTime + 0.22);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.22);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+      noise.start();
+    }
+
+    function playCoinSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(987.77, now);
+      osc.frequency.setValueAtTime(1318.51, now + 0.08);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.26);
+    }
+
+    function playShiftSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(290, now);
+      osc.frequency.exponentialRampToValueAtTime(150, now + 0.09);
+
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.09);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.1);
+    }
+
+    function playCrashSound() {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const oscGain = audioCtx.createGain();
+
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(110, now);
+      osc.frequency.exponentialRampToValueAtTime(25, now + 0.45);
+
+      oscGain.gain.setValueAtTime(0.3, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+
+      osc.connect(oscGain);
+      oscGain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.48);
+    }
+
+    // ==========================================
+    // --- 3D ENGINE & SCENE SETUP ---
+    // ==========================================
+    const LANE_WIDTH = 2.5;
+    const LANES = [-LANE_WIDTH, 0, LANE_WIDTH];
+    let currentLane = 1;
+
+    // Steady, enjoyable pace
+    const FAIR_SPEED = 0.36;
+    let speed = FAIR_SPEED;
+    let score = 0;
+    let coinsCollected = 0;
+    let isGameOver = false;
+
+    let isJumping = false;
+    let isSliding = false;
+    let yVelocity = 0;
+    const gravity = -0.017;
+
+    const obstacles = [];
+    const coins = [];
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x38bdf8, 40, 135);
+    scene.background = new THREE.Color(0x38bdf8);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+    dirLight.position.set(15, 30, 15);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // Track
+    const track = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 400),
+      new THREE.MeshStandardMaterial({ color: 0x334155 })
+    );
+    track.rotation.x = -Math.PI / 2;
+    track.position.z = -120;
+    scene.add(track);
+
+    [-2.5, 0, 2.5].forEach(x => {
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.08, 400),
+        new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.7 })
+      );
+      rail.position.set(x, 0.04, -120);
+      scene.add(rail);
+    });
+
+    for (let side of [-4.8, 4.8]) {
+      const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 5, 400),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b })
+      );
+      wall.position.set(side, 2.5, -120);
+      scene.add(wall);
+    }
+
+    // --- Player Rig ---
+    const player = new THREE.Group();
+    const hoodieMat = new THREE.MeshStandardMaterial({ color: 0x0284c7 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xfde047 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+    const shoeMat = new THREE.MeshStandardMaterial({ color: 0xef4444 });
+    const capMat = new THREE.MeshStandardMaterial({ color: 0xf97316 });
+
+    const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.8, 0.45), hoodieMat);
+    bodyMesh.position.y = 1.2;
+    player.add(bodyMesh);
+
+    const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), skinMat);
+    headMesh.position.set(0, 1.85, 0);
+    const capMesh = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.15, 0.58), capMat);
+    capMesh.position.set(0, 0.18, 0.05);
+    headMesh.add(capMesh);
+    player.add(headMesh);
+
+    function createLimb(w, h, d, mat, pivotY) {
+      const pivot = new THREE.Group();
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      mesh.position.y = -h / 2;
+      pivot.add(mesh);
+      pivot.position.y = pivotY;
+      return { pivot, mesh };
+    }
+
+    const leftArm = createLimb(0.2, 0.65, 0.2, hoodieMat, 1.5);
+    leftArm.pivot.position.x = -0.45;
+    player.add(leftArm.pivot);
+
+    const rightArm = createLimb(0.2, 0.65, 0.2, hoodieMat, 1.5);
+    rightArm.pivot.position.x = 0.45;
+    player.add(rightArm.pivot);
+
+    const leftLeg = createLimb(0.25, 0.7, 0.25, pantsMat, 0.8);
+    leftLeg.pivot.position.x = -0.2;
+    const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.4), shoeMat);
+    leftShoe.position.set(0, -0.65, 0.08);
+    leftLeg.pivot.add(leftShoe);
+    player.add(leftLeg.pivot);
+
+    const rightLeg = createLimb(0.25, 0.7, 0.25, pantsMat, 0.8);
+    rightLeg.pivot.position.x = 0.2;
+    const rightShoe = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.4), shoeMat);
+    rightShoe.position.set(0, -0.65, 0.08);
+    rightLeg.pivot.add(rightShoe);
+    player.add(rightLeg.pivot);
+
+    scene.add(player);
+    player.position.set(LANES[currentLane], 0, 0);
+
+    camera.position.set(0, 4.2, 6.2);
+    camera.lookAt(0, 1.5, -4);
+
+    // ==========================================
+    // --- 5 RECOGNIZABLE OBSTACLES ---
+    // ==========================================
+
+    // 1. Train Car (Dodge)
+    function createTrain(x, z, color) {
+      const train = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(2.0, 2.7, 7.5),
+        new THREE.MeshStandardMaterial({ color: color, roughness: 0.35 })
+      );
+      body.position.y = 1.35;
+      train.add(body);
+
+      const roof = new THREE.Mesh(
+        new THREE.BoxGeometry(1.8, 0.2, 7.3),
+        new THREE.MeshStandardMaterial({ color: 0x475569 })
+      );
+      roof.position.y = 2.75;
+      train.add(roof);
+
+      [-0.6, 0.6].forEach(lx => {
+        const light = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.18, 0.18, 0.1, 16),
+          new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        light.rotation.x = Math.PI / 2;
+        light.position.set(lx, 0.75, 3.8);
+        train.add(light);
+      });
+
+      train.position.set(x, 0, z);
+      train.userData = { type: 'dodge_only', bounds: { dx: 0.8, dz: 3.4 } };
+      return train;
+    }
+
+    // 2. Low Hurdle (Jump)
+    function createHurdle(x, z) {
+      const hurdle = new THREE.Group();
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(1.9, 0.36, 0.18),
+        new THREE.MeshStandardMaterial({ color: 0xf97316 })
+      );
+      bar.position.y = 0.36;
+      hurdle.add(bar);
+
+      [-0.8, 0.8].forEach(px => {
+        const leg = new THREE.Mesh(
+          new THREE.BoxGeometry(0.1, 0.65, 0.3),
+          new THREE.MeshStandardMaterial({ color: 0x334155 })
+        );
+        leg.position.set(px, 0.32, 0);
+        hurdle.add(leg);
+      });
+
+      hurdle.position.set(x, 0, z);
+      hurdle.userData = { type: 'jump', bounds: { dx: 0.8, dz: 0.35 } };
+      return hurdle;
+    }
+
+    // 3. Overhead Tunnel Bar (Slide)
+    function createOverheadBar(x, z) {
+      const frame = new THREE.Group();
+      const top = new THREE.Mesh(
+        new THREE.BoxGeometry(2.1, 0.7, 0.25),
+        new THREE.MeshStandardMaterial({ color: 0x475569 })
+      );
+      top.position.y = 2.05;
+      frame.add(top);
+
+      [-0.95, 0.95].forEach(px => {
+        const post = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.07, 0.07, 2.5),
+          new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
+        );
+        post.position.set(px, 1.25, 0);
+        frame.add(post);
+      });
+
+      frame.position.set(x, 0, z);
+      frame.userData = { type: 'slide', bounds: { dx: 0.8, dz: 0.35 } };
+      return frame;
+    }
+
+    // 4. Center Track Signal Pillar (Dodge)
+    function createSignalPillar(x, z) {
+      const pillar = new THREE.Group();
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.16, 0.16, 3.0),
+        new THREE.MeshStandardMaterial({ color: 0xfacc15 })
+      );
+      pole.position.y = 1.5;
+      pillar.add(pole);
+
+      const lamp = new THREE.Mesh(
+        new THREE.BoxGeometry(0.45, 0.45, 0.45),
+        new THREE.MeshBasicMaterial({ color: 0x22c55e })
+      );
+      lamp.position.y = 2.8;
+      pillar.add(lamp);
+
+      pillar.position.set(x, 0, z);
+      pillar.userData = { type: 'dodge_only', bounds: { dx: 0.65, dz: 0.6 } };
+      return pillar;
+    }
+
+    // 5. Dual-Stripe Road Barrier (Jump)
+    function createBarricade(x, z) {
+      const barricade = new THREE.Group();
+      const topBar = new THREE.Mesh(
+        new THREE.BoxGeometry(1.9, 0.24, 0.15),
+        new THREE.MeshStandardMaterial({ color: 0xfacc15 })
+      );
+      topBar.position.y = 0.48;
+      barricade.add(topBar);
+
+      const botBar = new THREE.Mesh(
+        new THREE.BoxGeometry(1.9, 0.18, 0.15),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a })
+      );
+      botBar.position.y = 0.22;
+      barricade.add(botBar);
+
+      [-0.8, 0.8].forEach(px => {
+        const foot = new THREE.Mesh(
+          new THREE.BoxGeometry(0.12, 0.6, 0.35),
+          new THREE.MeshStandardMaterial({ color: 0x475569 })
+        );
+        foot.position.set(px, 0.3, 0);
+        barricade.add(foot);
+      });
+
+      barricade.position.set(x, 0, z);
+      barricade.userData = { type: 'jump', bounds: { dx: 0.8, dz: 0.35 } };
+      return barricade;
+    }
+
+    function spawnCoin(x, y, z) {
+      const coin = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.35, 0.08, 16),
+        new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.85, roughness: 0.2 })
+      );
+      coin.rotation.x = Math.PI / 2;
+      coin.position.set(x, y, z);
+      scene.add(coin);
+      coins.push(coin);
+    }
+
+    // ==========================================
+    // --- FAIR-PLUS SPAWNER (24 UNIT GAP) ---
+    // ==========================================
+    let spawnZ = -30;
+    const trainColors = [0x2563eb, 0xdc2626, 0x16a34a];
+
+    function spawnFairPlusRow() {
+      // 1. One lane is ALWAYS guaranteed safe & open
+      const guaranteedOpenLane = Math.floor(Math.random() * 3);
+
+      for (let l = 0; l < 3; l++) {
+        if (l === guaranteedOpenLane) {
+          // Trail coins down the guaranteed open lane
+          for (let k = 0; k < 3; k++) {
+            spawnCoin(LANES[l], 0.75, spawnZ - (k * 2.5));
+          }
+        } else {
+          // 75% chance of obstacle in the other 2 lanes (regular, fair encounters)
+          if (Math.random() < 0.75) {
+            const laneX = LANES[l];
+            const roll = Math.random();
+            let obs;
+
+            if (roll < 0.30) {
+              const color = trainColors[Math.floor(Math.random() * trainColors.length)];
+              obs = createTrain(laneX, spawnZ, color);
+            } else if (roll < 0.55) {
+              obs = createHurdle(laneX, spawnZ);
+            } else if (roll < 0.75) {
+              obs = createOverheadBar(laneX, spawnZ);
+            } else if (roll < 0.88) {
+              obs = createBarricade(laneX, spawnZ);
+            } else {
+              obs = createSignalPillar(laneX, spawnZ);
+            }
+
+            scene.add(obs);
+            obstacles.push(obs);
+          }
+        }
+      }
+
+      // 24 units apart: Active flow, but never cramped
+      spawnZ -= 24;
+    }
+
+    for (let i = 0; i < 8; i++) spawnFairPlusRow();
+
+    // --- Controls ---
+    function handleInput(action) {
+      initAudio();
+      if (isGameOver) return;
+
+      if (action === 'left' && currentLane > 0) {
+        currentLane--;
+        playShiftSound();
+      } else if (action === 'right' && currentLane < 2) {
+        currentLane++;
+        playShiftSound();
+      } else if (action === 'jump' && !isJumping && !isSliding) {
+        isJumping = true;
+        yVelocity = 0.35;
+        playJumpSound();
+      } else if (action === 'slide' && !isSliding && !isJumping) {
+        isSliding = true;
+        playSlideSound();
+        setTimeout(() => { isSliding = false; }, 580);
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowleft' || k === 'a') handleInput('left');
+      if (k === 'arrowright' || k === 'd') handleInput('right');
+      if (k === 'arrowup' || k === 'w' || k === ' ') handleInput('jump');
+      if (k === 'arrowdown' || k === 's') handleInput('slide');
+    });
+
+    let touchStartX = 0, touchStartY = 0;
+    window.addEventListener('touchstart', e => {
+      initAudio();
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    });
+    window.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      const dy = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 30) handleInput('right');
+        else if (dx < -30) handleInput('left');
+      } else {
+        if (dy < -30) handleInput('jump');
+        else if (dy > 30) handleInput('slide');
+      }
+    });
+
+    // --- Game Loop ---
+    let animTime = 0;
+
+    function animate() {
+      if (isGameOver) return;
+      requestAnimationFrame(animate);
+
+      animTime += speed * 0.45;
+
+      // Lateral interpolation & lean
+      const targetX = LANES[currentLane];
+      const deltaX = targetX - player.position.x;
+      player.position.x += deltaX * 0.24;
+      player.rotation.z = -deltaX * 0.15;
+
+      // Jump dynamics
+      if (isJumping) {
+        player.position.y += yVelocity;
+        yVelocity += gravity;
+        if (player.position.y <= 0) {
+          player.position.y = 0;
+          isJumping = false;
+        }
+      }
+
+      // Animations
+      if (isSliding) {
+        player.scale.set(1, 0.45, 1.2);
+        player.rotation.x = 0.5;
+        leftLeg.pivot.rotation.x = 1.0;
+        rightLeg.pivot.rotation.x = 1.0;
+        leftArm.pivot.rotation.x = -1.2;
+        rightArm.pivot.rotation.x = -1.2;
+      } else if (isJumping) {
+        player.scale.set(1, 1, 1);
+        player.rotation.x = -0.12;
+        leftLeg.pivot.rotation.x = -0.6;
+        rightLeg.pivot.rotation.x = 0.4;
+        leftArm.pivot.rotation.x = -1.2;
+        rightArm.pivot.rotation.x = -1.2;
+      } else {
+        player.scale.set(1, 1, 1);
+        player.rotation.x = 0.12;
+
+        const runCycle = Math.sin(animTime * 11);
+        leftLeg.pivot.rotation.x = runCycle * 0.8;
+        rightLeg.pivot.rotation.x = -runCycle * 0.8;
+        leftArm.pivot.rotation.x = -runCycle * 0.8;
+        rightArm.pivot.rotation.x = runCycle * 0.8;
+
+        headMesh.position.y = 1.85 + Math.abs(Math.sin(animTime * 11)) * 0.07;
+      }
+
+      // Check Obstacles
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.position.z += speed;
+
+        const bounds = obs.userData.bounds;
+        const dz = Math.abs(obs.position.z - player.position.z);
+        const dx = Math.abs(obs.position.x - player.position.x);
+
+        // Honest collision bounds
+        if (dz < bounds.dz && dx < bounds.dx) {
+          if (obs.userData.type === 'dodge_only') {
+            triggerGameOver();
+          } else if (obs.userData.type === 'jump' && player.position.y < 0.60) {
+            triggerGameOver();
+          } else if (obs.userData.type === 'slide' && !isSliding) {
+            triggerGameOver();
+          }
+        }
+
+        if (obs.position.z > 14) {
+          scene.remove(obs);
+          obstacles.splice(i, 1);
+          spawnFairPlusRow();
+        }
+      }
+
+      // Coins
+      for (let i = coins.length - 1; i >= 0; i--) {
+        const coin = coins[i];
+        coin.position.z += speed;
+        coin.rotation.z += 0.05;
+
+        const dz = Math.abs(coin.position.z - player.position.z);
+        const dx = Math.abs(coin.position.x - player.position.x);
+
+        if (dz < 1.0 && dx < 0.85) {
+          scene.remove(coin);
+          coins.splice(i, 1);
+          coinsCollected++;
+          playCoinSound();
+          document.getElementById('coins').innerText = coinsCollected;
+        } else if (coin.position.z > 14) {
+          scene.remove(coin);
+          coins.splice(i, 1);
+        }
+      }
+
+      score += 1;
+      document.getElementById('score').innerText = Math.floor(score / 5);
+
+      renderer.render(scene, camera);
+    }
+
+    function triggerGameOver() {
+      if (isGameOver) return;
+      isGameOver = true;
+      playCrashSound();
+      document.getElementById('final-score').innerText = Math.floor(score / 5);
+      document.getElementById('game-over').style.display = 'block';
+    }
+
+    function restartGame() {
+      initAudio();
+      obstacles.forEach(o => scene.remove(o));
+      coins.forEach(c => scene.remove(c));
+      obstacles.length = 0;
+      coins.length = 0;
+
+      currentLane = 1;
+      player.position.set(0, 0, 0);
+      score = 0;
+      coinsCollected = 0;
+      speed = FAIR_SPEED;
+      spawnZ = -30;
+      isGameOver = false;
+
+      document.getElementById('score').innerText = '0';
+      document.getElementById('coins').innerText = '0';
+      document.getElementById('game-over').style.display = 'none';
+
+      for (let i = 0; i < 8; i++) spawnFairPlusRow();
+      animate();
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
+
